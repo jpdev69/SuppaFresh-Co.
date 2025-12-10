@@ -6,7 +6,7 @@ from optimizer import SupplyChainOptimizer
 class InventoryApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("SuppaFresh Co. Inventory System (Fixed Inventory Mode)")
+        self.root.title("SuppaFresh Co. Inventory System (Fixed Inventory + POS)")
         self.root.geometry("1000x700")
         
         # Initialize Logic
@@ -18,16 +18,19 @@ class InventoryApp:
         
         self.tab_inventory = ttk.Frame(self.tab_control)
         self.tab_restock = ttk.Frame(self.tab_control)
+        self.tab_pos = ttk.Frame(self.tab_control)
         self.tab_optimize = ttk.Frame(self.tab_control)
         
         self.tab_control.add(self.tab_inventory, text='Current Inventory')
         self.tab_control.add(self.tab_restock, text='Restock Inventory')
+        self.tab_control.add(self.tab_pos, text='Point of Sale')
         self.tab_control.add(self.tab_optimize, text='Optimization Report')
         
         self.tab_control.pack(expand=1, fill="both")
         
         self._build_inventory_tab()
         self._build_restock_tab()
+        self._build_pos_tab()
         self._build_optimize_tab()
 
     def _build_inventory_tab(self):
@@ -68,60 +71,105 @@ class InventoryApp:
         
         # Refresh SKUs for the dropdown
         existing_products = self.manager.list_products()
-        # Create list of "SKU - Name" for readability
         self.sku_options = [f"{p[0]} - {p[1]}" for p in existing_products]
         
         # SKU Selection
         lbl_sku = ttk.Label(form_frame, text="Select Product:")
         lbl_sku.grid(row=0, column=0, padx=10, pady=20, sticky="w")
         
-        self.sku_var = tk.StringVar()
-        self.sku_combo = ttk.Combobox(form_frame, textvariable=self.sku_var, values=self.sku_options, width=50)
-        self.sku_combo.grid(row=0, column=1, padx=10, pady=20)
+        self.restock_sku_var = tk.StringVar()
+        self.restock_sku_combo = ttk.Combobox(form_frame, textvariable=self.restock_sku_var, values=self.sku_options, width=50)
+        self.restock_sku_combo.grid(row=0, column=1, padx=10, pady=20)
         
         # Quantity
         lbl_qty = ttk.Label(form_frame, text="Quantity to Add:")
         lbl_qty.grid(row=1, column=0, padx=10, pady=20, sticky="w")
         
-        self.qty_var = tk.StringVar(value="0")
-        qty_entry = ttk.Entry(form_frame, textvariable=self.qty_var, width=20)
+        self.restock_qty_var = tk.StringVar(value="0")
+        qty_entry = ttk.Entry(form_frame, textvariable=self.restock_qty_var, width=20)
         qty_entry.grid(row=1, column=1, padx=10, pady=20, sticky="w")
         
         # Save Button
         save_btn = ttk.Button(form_frame, text="Update Stock", command=self.perform_restock)
         save_btn.grid(row=2, column=1, pady=30, sticky="w")
         
-        # Instructions
-        note = ttk.Label(form_frame, text="Note: This will increase the current stock level by the entered amount.", font=("Arial", 8, "italic"))
-        note.grid(row=3, column=0, columnspan=2, pady=10)
-
     def perform_restock(self):
         try:
-            selection = self.sku_var.get()
+            selection = self.restock_sku_var.get()
             if not selection:
                 messagebox.showerror("Error", "Please select a product.")
                 return
                 
-            qty_str = self.qty_var.get()
-            if not qty_str.isdigit():
+            qty_str = self.restock_qty_var.get()
+            if not qty_str.isdigit() or int(qty_str) <= 0:
                  messagebox.showerror("Error", "Quantity must be a positive integer.")
                  return
-                 
-            qty = int(qty_str)
-            if qty <= 0:
-                messagebox.showerror("Error", "Quantity must be greater than 0.")
-                return
             
-            # Extract SKU from "SKU - Name" string
             sku = selection.split(" - ")[0]
+            self.manager.restock_product(sku, int(qty_str))
+            messagebox.showinfo("Success", f"Stock updated for {sku}.")
             
-            self.manager.restock_product(sku, qty)
-            messagebox.showinfo("Success", f"Successfully added {qty} units to {sku}.")
-            
-            # Reset and refresh
-            self.qty_var.set("0")
+            self.restock_qty_var.set("0")
             self.refresh_inventory_list()
+            self._refresh_pos_dropdown() # Ensure POS has latest items if anything changed (unlikely but safe)
             
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+    def _build_pos_tab(self):
+        form_frame = ttk.LabelFrame(self.tab_pos, text="Checkout / Sale")
+        form_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # SKU Selection
+        lbl_sku = ttk.Label(form_frame, text="Select Item to Buy:")
+        lbl_sku.grid(row=0, column=0, padx=10, pady=20, sticky="w")
+        
+        self.pos_sku_var = tk.StringVar()
+        self.pos_sku_combo = ttk.Combobox(form_frame, textvariable=self.pos_sku_var, values=self.sku_options, width=50)
+        self.pos_sku_combo.grid(row=0, column=1, padx=10, pady=20)
+        
+        # Quantity
+        lbl_qty = ttk.Label(form_frame, text="Quantity:")
+        lbl_qty.grid(row=1, column=0, padx=10, pady=20, sticky="w")
+        
+        self.pos_qty_var = tk.StringVar(value="1")
+        qty_entry = ttk.Entry(form_frame, textvariable=self.pos_qty_var, width=20)
+        qty_entry.grid(row=1, column=1, padx=10, pady=20, sticky="w")
+        
+        # Checkout Button
+        buy_btn = ttk.Button(form_frame, text="Complete Purchase", command=self.perform_sale)
+        buy_btn.grid(row=2, column=1, pady=30, sticky="w")
+
+    def _refresh_pos_dropdown(self):
+        # Helper to sync dropdowns if needed
+        existing_products = self.manager.list_products()
+        self.sku_options = [f"{p[0]} - {p[1]}" for p in existing_products]
+        self.restock_sku_combo['values'] = self.sku_options
+        self.pos_sku_combo['values'] = self.sku_options
+
+    def perform_sale(self):
+        try:
+            selection = self.pos_sku_var.get()
+            if not selection:
+                messagebox.showerror("Error", "Please select a product.")
+                return
+                
+            qty_str = self.pos_qty_var.get()
+            if not qty_str.isdigit() or int(qty_str) <= 0:
+                 messagebox.showerror("Error", "Quantity must be a positive integer.")
+                 return
+            
+            sku = selection.split(" - ")[0]
+            qty = int(qty_str)
+            
+            success = self.manager.record_sale(sku, qty)
+            if success:
+                messagebox.showinfo("Success", f"Sold {qty} units of {sku}!")
+                self.pos_qty_var.set("1")
+                self.refresh_inventory_list()
+            else:
+                messagebox.showerror("Sale Failed", "Insufficient stock!")
+                
         except Exception as e:
             messagebox.showerror("Error", str(e))
 

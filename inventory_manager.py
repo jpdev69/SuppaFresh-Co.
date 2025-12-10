@@ -49,6 +49,19 @@ class InventoryManager:
                 estimated_annual_demand INTEGER DEFAULT 0
             )
         ''')
+        
+        # Create Sales Table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sales (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                sku TEXT NOT NULL,
+                quantity INTEGER NOT NULL,
+                revenue REAL NOT NULL,
+                FOREIGN KEY(sku) REFERENCES products(sku)
+            )
+        ''')
+        
         conn.commit()
         conn.close()
 
@@ -77,6 +90,38 @@ class InventoryManager:
         conn.commit()
         conn.close()
         print(f"Restocked SKU {sku} by {amount}")
+
+    def record_sale(self, sku: str, quantity: int) -> bool:
+        """
+        Records a sale: reduces stock and logs the transaction.
+        Returns True if successful, False if insufficient stock.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Check stock
+        cursor.execute('SELECT quantity, price FROM products WHERE sku = ?', (sku,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            raise ValueError("Product not found")
+            
+        current_qty, price = row
+        if current_qty < quantity:
+            conn.close()
+            return False
+            
+        # Deduct stock
+        cursor.execute('UPDATE products SET quantity = quantity - ? WHERE sku = ?', (quantity, sku))
+        
+        # Record sale
+        revenue = price * quantity
+        cursor.execute('INSERT INTO sales (sku, quantity, revenue) VALUES (?, ?, ?)', (sku, quantity, revenue))
+        
+        conn.commit()
+        conn.close()
+        print(f"Sold {quantity} of {sku} for ${revenue:.2f}")
+        return True
 
     def list_products(self) -> List[tuple]:
         conn = sqlite3.connect(self.db_path)
