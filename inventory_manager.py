@@ -70,6 +70,14 @@ class InventoryManager:
         finally:
             conn.close()
 
+    def restock_product(self, sku: str, amount: int):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('UPDATE products SET quantity = quantity + ? WHERE sku = ?', (amount, sku))
+        conn.commit()
+        conn.close()
+        print(f"Restocked SKU {sku} by {amount}")
+
     def list_products(self) -> List[tuple]:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
